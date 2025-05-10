@@ -2,10 +2,10 @@ import json
 import numpy as np
 import cv2
 
-from util.model import load_human_model
+from util.model import load_animal_model
 
 
-model = load_human_model()
+model = load_animal_model()
 
 with open('animal_class_indices.json', 'r') as f:
     class_indices = json.load(f)

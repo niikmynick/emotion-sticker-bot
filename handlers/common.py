@@ -5,6 +5,7 @@ from aiogram.types import Message
 
 from bot.source import send_message_with_retry
 
+
 common_router = Router(name="common")
 
 
@@ -15,4 +16,4 @@ async def message_handler(message: Message) -> None:
 
     logging.info(f'User {user_id} :: {username} sent a message: {message.text}')
 
-    await send_message_with_retry(user_id, "Держи в курсе")
+    await send_message_with_retry(user_id, "Извини, я тебя не понимаю")

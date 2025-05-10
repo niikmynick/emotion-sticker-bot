@@ -37,7 +37,7 @@ if __name__ == '__main__':
     image = cv2.imread('a.jpg')
     face = extract_face(image)
     if face is not None:
-        face = preprocess_face(face)
+        # face = preprocess_face(face)
         cv2.imshow('Extracted Face', face)
         cv2.waitKey(0)
         cv2.destroyAllWindows()
