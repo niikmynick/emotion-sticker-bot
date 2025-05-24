@@ -7,7 +7,7 @@ from util.face import extract_face, preprocess_face
 
 model = load_human_model()
 
-with open('human_class_indices.json', 'r') as f:
+with open('../human_class_indices.json', 'r') as f:
     class_indices = json.load(f)
 
 indices_to_emotion = {v: k for k, v in class_indices.items()}

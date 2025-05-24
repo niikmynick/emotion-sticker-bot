@@ -7,7 +7,7 @@ from util.model import load_animal_model
 
 model = load_animal_model()
 
-with open('animal_class_indices.json', 'r') as f:
+with open('../animal_class_indices.json', 'r') as f:
     class_indices = json.load(f)
 
 indices_to_emotion = {v: k for k, v in class_indices.items()}

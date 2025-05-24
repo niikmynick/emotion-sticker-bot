@@ -1,10 +1,10 @@
 aiogram~=3.18.0
 opencv-python~=4.11.0.86
 mtcnn~=1.0.0
-tensorflow~=2.19.0
-numpy~=2.1.3
+# tensorflow~=2.19.0
+numpy
 
-keras~=3.9.2
+keras
 pillow~=11.2.1
-scikit-learn~=1.6.1
+scikit-learn
 peewee~=3.18.1
