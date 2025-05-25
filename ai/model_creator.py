@@ -5,7 +5,7 @@ import numpy as np
 import pandas as pd
 from keras import Input, Model
 from keras.src.layers import BatchNormalization, Conv2D, MaxPooling2D, Dense, Dropout, GlobalAveragePooling2D, \
-    SeparableConv2D, Add, Activation
+    SeparableConv2D, Add, Activation, Multiply
 from keras.src.legacy.preprocessing.image import ImageDataGenerator
 from keras.src.callbacks import EarlyStopping, ModelCheckpoint, ReduceLROnPlateau
 import json
@@ -30,6 +30,13 @@ def conv_bn_act(x, filters, k=3, s=1):
     x = BatchNormalization()(x)
     return Activation('relu')(x)
 
+def se_block(x, r=8):
+    f = x.shape[-1]
+    s = GlobalAveragePooling2D()(x)
+    s = Dense(f // r, activation='relu')(s)
+    s = Dense(f, activation='sigmoid')(s)
+    return Multiply()([x, s])
+
 def sep_res_block(x, filters):
     shortcut = conv_bn_act(x, filters, k=1, s=2)
 
@@ -51,6 +58,7 @@ def build_mini_xception(input_shape=(48, 48, 1), num_classes=7):
 
     for f in [128, 256, 512, 728]:
         x = sep_res_block(x, f)
+        x = se_block(x)  # attention
 
     x = GlobalAveragePooling2D()(x)
     out = Dense(num_classes, activation='softmax')(x)
@@ -120,14 +128,14 @@ def train_model(is_human: bool = True):
             dataframe=df_train,
             x_col='filename', y_col='class',
             target_size=(48, 48), color_mode='grayscale',
-            batch_size=64, class_mode='categorical',
+            batch_size=128, class_mode='categorical',
             shuffle=True
         )
         val_gen = val_datagen.flow_from_dataframe(
             dataframe=df_val,
             x_col='filename', y_col='class',
             target_size=(48, 48), color_mode='grayscale',
-            batch_size=64, class_mode='categorical',
+            batch_size=128, class_mode='categorical',
             shuffle=False
         )
     else:
@@ -135,7 +143,7 @@ def train_model(is_human: bool = True):
             (HUMAN_DATASET_PATH if is_human else ANIMAL_DATASET_PATH) + 'train/',
             target_size=(48, 48),
             color_mode='grayscale',
-            batch_size=64,
+            batch_size=128,
             class_mode='categorical',
             shuffle=True
         )
@@ -144,7 +152,7 @@ def train_model(is_human: bool = True):
             (HUMAN_DATASET_PATH if is_human else ANIMAL_DATASET_PATH) + 'test/',
             target_size=(48, 48),
             color_mode='grayscale',
-            batch_size=64,
+            batch_size=128,
             class_mode='categorical',
             shuffle=False
         )

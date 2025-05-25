@@ -69,7 +69,7 @@ if __name__ == "__main__":
     run_animal = args.animal or not (args.human or args.animal)
 
     def local_load_model():
-        return load_model('../models/curr_best/human_best_model - Copy.keras', custom_objects={ 'loss': categorical_focal_loss(alpha=0.25, gamma=2.0)})
+        return load_model('../models/curr_best/human_best_model.keras', custom_objects={ 'loss': categorical_focal_loss(alpha=0.25, gamma=2.0)})
         # return load_model('./models/human.keras')
 
     if run_human:

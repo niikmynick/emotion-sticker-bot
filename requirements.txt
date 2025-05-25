@@ -8,3 +8,5 @@ keras
 pillow~=11.2.1
 scikit-learn
 peewee~=3.18.1
+
+pydot
