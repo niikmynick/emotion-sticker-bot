@@ -4,14 +4,13 @@ import os
 import numpy as np
 import pandas as pd
 from keras import Input, Model
-from keras.src.losses import CategoricalCrossentropy
-from keras.src.layers import BatchNormalization, Conv2D, MaxPooling2D, Flatten, Dense, Dropout, GlobalAveragePooling2D
+from keras.src.layers import BatchNormalization, Conv2D, MaxPooling2D, Dense, Dropout, GlobalAveragePooling2D, \
+    SeparableConv2D, Add, Activation
 from keras.src.legacy.preprocessing.image import ImageDataGenerator
 from keras.src.callbacks import EarlyStopping, ModelCheckpoint, ReduceLROnPlateau
 import json
-
-from keras.regularizers import l2
-from keras.src.optimizers import Adam
+from tensorflow.keras import backend as K
+from keras.src.optimizers import Adam, AdamW
 from sklearn.utils import class_weight
 
 from properties import HUMAN_MODEL_PATH, HUMAN_DATASET_PATH, ANIMAL_DATASET_PATH, ANIMAL_MODEL_PATH, \
@@ -26,35 +25,74 @@ ANIMAL_BEST_MODEL_PATH = '../' + ANIMAL_BEST_MODEL_PATH
 
 HUMAN_DATASET_AFF_PATH = HUMAN_DATASET_PATH.rstrip('/') + '_affectnet/'
 
-def build_model(input_shape=(48, 48, 1), num_classes=7):
-    inputs = Input(input_shape)
+def conv_bn_act(x, filters, k=3, s=1):
+    x = Conv2D(filters, k, strides=s, padding='same', use_bias=False)(x)
+    x = BatchNormalization()(x)
+    return Activation('relu')(x)
 
-    x = Conv2D(64, 3, padding='same', activation='relu')(inputs)
-    x = BatchNormalization()(x)
-    x = Conv2D(64, 3, padding='same', activation='relu')(x)
-    x = BatchNormalization()(x)
-    x = MaxPooling2D()(x)
-    x = Dropout(0.25)(x)
+def sep_res_block(x, filters):
+    shortcut = conv_bn_act(x, filters, k=1, s=2)
 
-    x = Conv2D(128, 3, padding='same', activation='relu')(x)
+    x = SeparableConv2D(filters, 3, padding='same', use_bias=False)(x)
     x = BatchNormalization()(x)
-    x = Conv2D(128, 3, padding='same', activation='relu')(x)
+    x = Activation('relu')(x)
+
+    x = SeparableConv2D(filters, 3, padding='same', use_bias=False)(x)
     x = BatchNormalization()(x)
-    x = MaxPooling2D()(x)
+    x = MaxPooling2D(3, strides=2, padding='same')(x)
+
+    x = Add()([x, shortcut])
+    return x
+
+def build_mini_xception(input_shape=(48, 48, 1), num_classes=7):
+    inp = Input(shape=input_shape)
+    x   = conv_bn_act(inp, 32, 3, 1)
+    x   = conv_bn_act(x,   64, 3, 2)
+
+    for f in [128, 256, 512, 728]:
+        x = sep_res_block(x, f)
+
     x = GlobalAveragePooling2D()(x)
+    out = Dense(num_classes, activation='softmax')(x)
+    return Model(inputs=inp, outputs=out)
 
-    x = Dense(128, activation='relu', kernel_regularizer=l2(1e-4))(x)
-    x = Dropout(0.5)(x)
-    outputs = Dense(num_classes, activation='softmax')(x)
+def categorical_focal_loss(alpha=0.25, gamma=2.0):
+    """
+      FL = -alpha * (1 - p_t)**gamma * log(p_t)
 
-    return Model(inputs, outputs)
+    Args:
+      alpha: balancing factor, default 0.25
+      gamma: focusing parameter, default 2.0
 
+    Returns:
+      a loss function expecting y_true, y_pred one-hot.
+    """
+
+    def loss(y_true, y_pred):
+        # clip to prevent NaN's and Inf's
+        y_pred = K.clip(y_pred, K.epsilon(), 1.0 - K.epsilon())
+        # compute cross-entropy term: -y_true * log(p)
+        ce = -y_true * K.log(y_pred)
+        # compute weighting term: alpha * (1 - p)^gamma
+        weight = alpha * K.pow(1.0 - y_pred, gamma)
+        # combine
+        fl = weight * ce
+        # sum over classes
+        return K.sum(fl, axis=-1)
+
+    return loss
 
 def train_model(is_human: bool = True):
     train_datagen = ImageDataGenerator(
-        rescale=1./255,
-        rotation_range=10,
+        rescale=1. / 255,
+        rotation_range=20,
+        width_shift_range=0.15,
+        height_shift_range=0.15,
+        zoom_range=0.15,
+        shear_range=10,
+        brightness_range=[0.7, 1.3],
         horizontal_flip=True,
+        fill_mode='nearest',
     )
 
     val_datagen = ImageDataGenerator(rescale=1./255)
@@ -115,10 +153,14 @@ def train_model(is_human: bool = True):
     with open(('human' if is_human else 'animal') + '_class_indices.json', 'w') as file:
         json.dump(train_gen.class_indices, file)
 
-    model = build_model(num_classes=len(train_gen.class_indices))
-    model.compile(optimizer=Adam(1e-3),
-                  loss=CategoricalCrossentropy(label_smoothing=0.05),
-                  metrics=['accuracy', 'Precision', 'Recall'])
+    model = build_mini_xception(num_classes=len(train_gen.class_indices))
+    optimizer = AdamW(learning_rate=0.003, weight_decay=5e-4, clipnorm=1.0)
+    model.compile(optimizer=optimizer,
+                  loss=categorical_focal_loss(alpha=0.25, gamma=2.0),
+                  metrics=['accuracy', 'Precision', 'Recall', 'F1Score'])
+
+    if is_human and os.path.exists('../models/curr_best/human_best_model.keras'):
+        model.load_weights('../models/curr_best/human_best_model.keras')
 
 
     callbacks = [

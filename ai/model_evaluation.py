@@ -8,6 +8,7 @@ from sklearn.metrics import (
 )
 from keras.src.legacy.preprocessing.image import ImageDataGenerator
 
+from ai.model_creator import categorical_focal_loss
 from util.model import load_human_model, load_animal_model
 from properties import (
     HUMAN_DATASET_PATH,
@@ -68,7 +69,8 @@ if __name__ == "__main__":
     run_animal = args.animal or not (args.human or args.animal)
 
     def local_load_model():
-        return load_model('models/human.keras')
+        return load_model('../models/curr_best/human_best_model - Copy.keras', custom_objects={ 'loss': categorical_focal_loss(alpha=0.25, gamma=2.0)})
+        # return load_model('./models/human.keras')
 
     if run_human:
         evaluate_one(
