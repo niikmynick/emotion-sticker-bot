@@ -38,6 +38,8 @@ def evaluate_one(model_loader, dataset_root, title: str):
     gen = build_test_gen(dataset_root)
     model = model_loader()
 
+    print("Testing model:", model.name)
+
     # Реальные и предсказанные метки
     y_true = gen.classes
     y_pred = model.predict(gen, verbose=1).argmax(axis=1)
@@ -68,19 +70,22 @@ if __name__ == "__main__":
     run_human = args.human or not (args.human or args.animal)
     run_animal = args.animal or not (args.human or args.animal)
 
-    def local_load_model():
+    def local_human_load_model():
         return load_model('../models/curr_best/human_best_model.keras', custom_objects={ 'loss': categorical_focal_loss(alpha=0.25, gamma=2.0)})
         # return load_model('./models/human.keras')
 
+    def local_animal_load_model():
+        return load_model('../models/animal_best_model.keras')
+
     if run_human:
         evaluate_one(
-            local_load_model,
+            local_human_load_model,
             HUMAN_DATASET_PATH,
-            title="Human-CNN (FER-2013) — confusion matrix",
+            title="Human-CNN — confusion matrix",
         )
     if run_animal:
         evaluate_one(
-            load_animal_model,
+            local_animal_load_model,
             ANIMAL_DATASET_PATH,
             title="Animal-CNN (Pets Facial Expression) — confusion matrix",
         )

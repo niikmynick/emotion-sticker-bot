@@ -3,9 +3,10 @@ import os
 
 import numpy as np
 import pandas as pd
-from keras import Input, Model
+from keras import Input, Model, Sequential, regularizers
+from keras.src.applications.efficientnet import EfficientNetB5
 from keras.src.layers import BatchNormalization, Conv2D, MaxPooling2D, Dense, Dropout, GlobalAveragePooling2D, \
-    SeparableConv2D, Add, Activation, Multiply
+    SeparableConv2D, Add, Activation, Multiply, Flatten
 from keras.src.legacy.preprocessing.image import ImageDataGenerator
 from keras.src.callbacks import EarlyStopping, ModelCheckpoint, ReduceLROnPlateau
 import json
@@ -90,6 +91,21 @@ def categorical_focal_loss(alpha=0.25, gamma=2.0):
 
     return loss
 
+def build_model(input_shape=(48, 48, 1), num_classes=7):
+    model = Sequential([
+        Conv2D(32, (3, 3), activation='relu', input_shape=input_shape),
+        BatchNormalization(),
+        MaxPooling2D(2, 2),
+        Conv2D(64, (3, 3), activation='relu'),
+        BatchNormalization(),
+        MaxPooling2D(2, 2),
+        Flatten(),
+        Dropout(0.5),
+        Dense(128, activation='relu'),
+        Dense(num_classes, activation='softmax')
+    ])
+    return model
+
 def train_model(is_human: bool = True):
     train_datagen = ImageDataGenerator(
         rescale=1. / 255,
@@ -161,11 +177,12 @@ def train_model(is_human: bool = True):
     with open(('human' if is_human else 'animal') + '_class_indices.json', 'w') as file:
         json.dump(train_gen.class_indices, file)
 
-    model = build_mini_xception(num_classes=len(train_gen.class_indices))
-    optimizer = AdamW(learning_rate=0.003, weight_decay=5e-4, clipnorm=1.0)
-    model.compile(optimizer=optimizer,
-                  loss=categorical_focal_loss(alpha=0.25, gamma=2.0),
-                  metrics=['accuracy', 'Precision', 'Recall', 'F1Score'])
+    model = build_mini_xception(num_classes=len(train_gen.class_indices)) if is_human \
+        else build_model(num_classes=len(train_gen.class_indices))
+    optimizer = AdamW(learning_rate=1e-4, weight_decay=5e-4, clipnorm=1.0)
+    model.compile(optimizer=optimizer if is_human else 'adam',
+                  loss=categorical_focal_loss(alpha=0.25, gamma=2.0) if is_human else 'categorical_crossentropy',
+                  metrics=['accuracy', 'Precision', 'Recall', 'F1Score'] if is_human else ['accuracy', 'Precision', 'Recall'])
 
     if is_human and os.path.exists('../models/curr_best/human_best_model.keras'):
         model.load_weights('../models/curr_best/human_best_model.keras')
@@ -199,4 +216,4 @@ def train_model(is_human: bool = True):
     model.save(HUMAN_MODEL_PATH if is_human else ANIMAL_MODEL_PATH, overwrite=True)
 
 if __name__ == '__main__':
-    train_model(is_human=True)
+    train_model(is_human=False)
