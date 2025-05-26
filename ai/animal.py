@@ -14,9 +14,8 @@ indices_to_emotion = {v: k for k, v in class_indices.items()}
 
 
 def get_animal_emotion(image):
-    gray = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
-    img48 = cv2.resize(gray, (48, 48))
-    x = img48.astype("float32") / 255.0
+    img224 = cv2.resize(image, (224, 224))
+    x = img224.astype("float32") / 255.0
     x = np.expand_dims(x, axis=(0, -1))
 
     preds = model.predict(x)

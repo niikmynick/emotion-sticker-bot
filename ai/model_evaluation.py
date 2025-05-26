@@ -9,7 +9,6 @@ from sklearn.metrics import (
 from keras.src.legacy.preprocessing.image import ImageDataGenerator
 
 from ai.model_creator import categorical_focal_loss
-from util.model import load_human_model, load_animal_model
 from properties import (
     HUMAN_DATASET_PATH,
     ANIMAL_DATASET_PATH,
@@ -18,16 +17,20 @@ from properties import (
 HUMAN_DATASET_PATH = '../' + HUMAN_DATASET_PATH
 ANIMAL_DATASET_PATH = '../' + ANIMAL_DATASET_PATH
 
-def build_test_gen(dataset_root: str, batch_size: int = 64):
+def build_test_gen(dataset_root: str, batch_size: int = 64, is_human: bool = True):
     """
     Создаёт ImageDataGenerator для каталога  <root>/test/
     (shuffle=False важно — порядок классов будет совпадать с .classes)
     """
-    datagen = ImageDataGenerator(rescale=1.0 / 255)
+
+    def scalar(img):
+        return img
+
+    datagen = ImageDataGenerator(rescale=1.0 / 255) if is_human else ImageDataGenerator(preprocessing_function=scalar)
     return datagen.flow_from_directory(
         f"{dataset_root}test/",
-        target_size=(48, 48),
-        color_mode="grayscale",
+        target_size=(48, 48) if is_human else (224, 224),
+        color_mode="grayscale" if is_human else "rgb",
         batch_size=batch_size,
         class_mode="categorical",
         shuffle=False,
@@ -35,7 +38,7 @@ def build_test_gen(dataset_root: str, batch_size: int = 64):
 
 
 def evaluate_one(model_loader, dataset_root, title: str):
-    gen = build_test_gen(dataset_root)
+    gen = build_test_gen(dataset_root , is_human=dataset_root == HUMAN_DATASET_PATH)
     model = model_loader()
 
     print("Testing model:", model.name)
@@ -75,7 +78,8 @@ if __name__ == "__main__":
         # return load_model('./models/human.keras')
 
     def local_animal_load_model():
-        return load_model('../models/animal_best_model.keras')
+        # return load_model('../models/animal_best_model.keras')
+        return load_model('../efficientNetB5_pet_emotion_model.keras')
 
     if run_human:
         evaluate_one(

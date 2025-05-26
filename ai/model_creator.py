@@ -11,7 +11,7 @@ from keras.src.legacy.preprocessing.image import ImageDataGenerator
 from keras.src.callbacks import EarlyStopping, ModelCheckpoint, ReduceLROnPlateau
 import json
 from tensorflow.keras import backend as K
-from keras.src.optimizers import Adam, AdamW
+from keras.src.optimizers import Adam, AdamW, Adamax
 from sklearn.utils import class_weight
 
 from properties import HUMAN_MODEL_PATH, HUMAN_DATASET_PATH, ANIMAL_DATASET_PATH, ANIMAL_MODEL_PATH, \
@@ -92,19 +92,23 @@ def categorical_focal_loss(alpha=0.25, gamma=2.0):
     return loss
 
 def build_model(input_shape=(48, 48, 1), num_classes=7):
+    base_model = EfficientNetB5(include_top=False, weights="imagenet",
+                                input_shape=input_shape, pooling='max')
+    base_model.trainable = False
+
     model = Sequential([
-        Conv2D(32, (3, 3), activation='relu', input_shape=input_shape),
-        BatchNormalization(),
-        MaxPooling2D(2, 2),
-        Conv2D(64, (3, 3), activation='relu'),
-        BatchNormalization(),
-        MaxPooling2D(2, 2),
-        Flatten(),
-        Dropout(0.5),
-        Dense(128, activation='relu'),
+        base_model,
+        BatchNormalization(axis=-1, momentum=0.99, epsilon=0.001),
+        Dense(256, activation='relu'),
+        Dense(128, kernel_regularizer=regularizers.l2(0.016), activity_regularizer=regularizers.l1(0.006),
+              bias_regularizer=regularizers.l1(0.006), activation='relu'),
+        Dropout(rate=0.45, seed=123),
         Dense(num_classes, activation='softmax')
     ])
     return model
+
+def scalar(img):
+    return img
 
 def train_model(is_human: bool = True):
     train_datagen = ImageDataGenerator(
@@ -117,9 +121,24 @@ def train_model(is_human: bool = True):
         brightness_range=[0.7, 1.3],
         horizontal_flip=True,
         fill_mode='nearest',
-    )
+    ) if is_human else ImageDataGenerator(preprocessing_function=scalar,
+                       rotation_range=40,
+                       width_shift_range=0.2,
+                       height_shift_range=0.2,
+                       brightness_range=[0.4, 0.6],
+                       zoom_range=0.3,
+                       horizontal_flip=True,
+                       vertical_flip=True)
 
-    val_datagen = ImageDataGenerator(rescale=1./255)
+    val_datagen = ImageDataGenerator(rescale=1./255) \
+        if is_human else ImageDataGenerator(preprocessing_function= scalar,
+                           rotation_range=40,
+                           width_shift_range=0.2,
+                           height_shift_range=0.2,
+                           brightness_range=[0.4,0.6],
+                           zoom_range=0.3,
+                           horizontal_flip=True,
+                           vertical_flip=True)
 
     if is_human:
         def make_dataframe(root_dir):
@@ -156,19 +175,19 @@ def train_model(is_human: bool = True):
         )
     else:
         train_gen = train_datagen.flow_from_directory(
-            (HUMAN_DATASET_PATH if is_human else ANIMAL_DATASET_PATH) + 'train/',
-            target_size=(48, 48),
-            color_mode='grayscale',
-            batch_size=128,
+            ANIMAL_DATASET_PATH + 'train/',
+            target_size=(224, 224),
+            color_mode='rgb',
+            batch_size=16,
             class_mode='categorical',
             shuffle=True
         )
 
         val_gen = val_datagen.flow_from_directory(
-            (HUMAN_DATASET_PATH if is_human else ANIMAL_DATASET_PATH) + 'test/',
-            target_size=(48, 48),
-            color_mode='grayscale',
-            batch_size=128,
+            ANIMAL_DATASET_PATH + 'test/',
+            target_size=(224, 224),
+            color_mode='rgb',
+            batch_size=16,
             class_mode='categorical',
             shuffle=False
         )
@@ -178,20 +197,20 @@ def train_model(is_human: bool = True):
         json.dump(train_gen.class_indices, file)
 
     model = build_mini_xception(num_classes=len(train_gen.class_indices)) if is_human \
-        else build_model(num_classes=len(train_gen.class_indices))
-    optimizer = AdamW(learning_rate=1e-4, weight_decay=5e-4, clipnorm=1.0)
-    model.compile(optimizer=optimizer if is_human else 'adam',
+        else build_model(num_classes=len(train_gen.class_indices), input_shape=(224, 224, 3))
+    optimizer = AdamW(learning_rate=1e-3, weight_decay=5e-4, clipnorm=1.0)
+    model.compile(optimizer=optimizer if is_human else Adamax(learning_rate= 0.001),
                   loss=categorical_focal_loss(alpha=0.25, gamma=2.0) if is_human else 'categorical_crossentropy',
-                  metrics=['accuracy', 'Precision', 'Recall', 'F1Score'] if is_human else ['accuracy', 'Precision', 'Recall'])
+                  metrics=['accuracy', 'Precision', 'Recall', 'F1Score'] if is_human else ['accuracy'])
 
     if is_human and os.path.exists('../models/curr_best/human_best_model.keras'):
         model.load_weights('../models/curr_best/human_best_model.keras')
 
 
     callbacks = [
-        ReduceLROnPlateau(monitor='val_loss', factor=0.5, patience=5),
-        EarlyStopping(monitor='val_loss', patience=15, restore_best_weights=True),
-        ModelCheckpoint(HUMAN_BEST_MODEL_PATH if is_human else ANIMAL_BEST_MODEL_PATH, monitor='val_loss', save_best_only=True)
+        # ReduceLROnPlateau(monitor='val_accuracy', factor=0.5, patience=5),
+        # EarlyStopping(monitor='val_accuracy', patience=20, restore_best_weights=True),
+        ModelCheckpoint(HUMAN_BEST_MODEL_PATH if is_human else ANIMAL_BEST_MODEL_PATH, monitor='val_accuracy', save_best_only=True)
     ]
 
     unique_classes = np.unique(train_gen.classes)
@@ -216,4 +235,4 @@ def train_model(is_human: bool = True):
     model.save(HUMAN_MODEL_PATH if is_human else ANIMAL_MODEL_PATH, overwrite=True)
 
 if __name__ == '__main__':
-    train_model(is_human=False)
+    train_model(is_human=True)
